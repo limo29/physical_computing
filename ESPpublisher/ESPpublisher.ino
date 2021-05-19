@@ -2,8 +2,8 @@
 #include <PubSubClient.h>
 #include "esp_system.h"
 
-const char* ssid = "fisch-netz (2,4GHz)";
-const char* password = "4798632797704486";
+const char* ssid = "layfritzbox";
+const char* password = "eliaslay10";
 const char* mqtt_server = "test.mosquitto.org";
 
 WiFiClient espClient;
@@ -63,11 +63,11 @@ void callback(char* topic, byte* message, unsigned int length)
 void reconnect() 
 {
   while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
+  //  Serial.print("Attempting MQTT connection...");
     
     if (client.connect("ESP32Client")) {
       Serial.println("connected");
-      client.subscribe("esp32pi/data");
+      client.subscribe("physical/EspControl");
     } 
     else 
     {
@@ -86,9 +86,9 @@ void loop()
     reconnect();
   }
   client.loop();
-
+delay(1000);
   float resultTemp = (temprature_sens_read() - 32) / 1.8;
   char result[8];
   dtostrf(resultTemp, 6, 2, result);
-  client.publish("esp32jonas/data", result);
+  client.publish("physical/testdaten", "test");
 }

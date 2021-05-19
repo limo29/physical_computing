@@ -1,0 +1,9 @@
+mqtt_server = "test.mosquitto.org"
+port = "1883"
+topic: physical
+
+topic ist phsyical, für jeden Sensorwert wird ein eigenes sub topic benutzt welches wie folgt hier dokumentiert wird:
+
+Testdaten: phsical/testdaten ; type = String ; max = 10 char ;
+
+Temperatur: physical/temperatur ; type = float ; (converted to string) 
