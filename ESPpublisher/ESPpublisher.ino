@@ -67,7 +67,7 @@ void reconnect()
     
     if (client.connect("ESP32Client")) {
       Serial.println("connected");
-      client.subscribe("physical/EspControl");
+      client.subscribe("FeinstaubMessStation1/EspControl");
     } 
     else 
     {
@@ -86,9 +86,9 @@ void loop()
     reconnect();
   }
   client.loop();
-delay(1000);
+delay(500);
   float resultTemp = (temprature_sens_read() - 32) / 1.8;
   char result[8];
   dtostrf(resultTemp, 6, 2, result);
-  client.publish("physical/testdaten", "test");
+  client.publish("FeinstaubMessStation1/testdaten", "test");
 }
