@@ -2,7 +2,7 @@ mqtt_server = "test.mosquitto.org"
 port = "1883"
 topic: FeinstaubMessStation/id1
 
-Der Rückkanal für Steuerbefehle an den esp lautet: FeinstaubMessStation1/EspControl1
+Der Rückkanal für Steuerbefehle an den esp lautet: FeinstaubMessStation/id1/EspControl1
 
 topic ist phsyical, für jeden Sensorwert wird ein eigenes sub topic benutzt welches wie folgt hier dokumentiert wird:
 
