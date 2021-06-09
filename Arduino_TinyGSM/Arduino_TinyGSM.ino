@@ -13,6 +13,18 @@
 // Set serial for AT commands (to the module)
 #define SerialAT  Serial1
 
+//Sensors 
+#include <SoftwareSerial.h>
+#include <Adafruit_BMP280.h>
+#include <stdio.h>
+#include <string.h>
+#include "SdsDustSensor.h"
+#include <Wire.h>
+
+Adafruit_BMP280 bmp;
+SdsDustSensor sds(Serial2);
+
+
 // Configure TinyGSM library
 #define TINY_GSM_MODEM_SIM800          // Modem is SIM800
 #define TINY_GSM_RX_BUFFER      1024   // Set RX buffer to 1Kb
@@ -50,6 +62,7 @@ const int mqttPort = 1883;
 
 //Global control variables
 bool sensorsDone = false;
+bool notConnected = true;
 //#define DataSaveModeOff true //Uncomment if you want to disable DataSaverMode with extra debug information
 
 //Global data string
@@ -170,7 +183,67 @@ bool gsmConnect(){
 return true;
 }
 
+String getSensoren(){
+    sds.wakeup();
+     delay(500);
+     PmResult pm = sds.queryPm();
 
+  char PM25Result[8];
+  char PM10Result[8];
+
+  if(pm.isOk())
+  {
+    dtostrf(pm.pm25, 8, 2, PM25Result);
+    dtostrf(pm.pm10, 8, 2, PM10Result);
+
+    Serial.println("PM2,5 - Wert:");
+    Serial.println(PM25Result);
+    Serial.println("PM10 - Wert:");
+    Serial.println(PM10Result);
+  } 
+  
+  sds.sleep();
+/*
+   * Berarbeitung des BMP280
+   * Erhalt: Temperatur, Luftdruck und Höhe
+   */
+  float temperature = bmp.readTemperature();
+  float pressure = bmp.readPressure();
+  float Altitude = bmp.readAltitude(1013.25);
+
+  char temperatureResult[8];
+  char pressureResult[16];
+  char AltitudeResult[8];
+
+  dtostrf(temperature, 8, 2, temperatureResult);
+  dtostrf(pressure, 16, 2, pressureResult);
+  dtostrf(Altitude, 8, 2, AltitudeResult);
+
+  Serial.println("Temperatur - Wert:");
+  Serial.println(temperatureResult);
+  Serial.println("Luftdruck - Wert:");
+  Serial.println(pressureResult);
+  Serial.println("Höhe - Wert:");
+  Serial.println(AltitudeResult);
+  
+  /*
+   * Zusammenfügen der einzelnen Strings
+   */
+
+  char message[1024];
+  strcat(message, "PM25 ");
+  strcat(message, PM25Result);
+  strcat(message, " PM10 ");
+  strcat(message, PM10Result);
+  strcat(message, " temp "); 
+  strcat(message, temperatureResult);
+  strcat(message, " pres ");
+  strcat(message, pressureResult);
+  strcat(message, " alti ");
+  strcat(message, AltitudeResult); 
+
+  return message;
+}
 
 void setup()
 {
@@ -184,6 +257,21 @@ void setup()
         Serial.println("Setting power error");
     }
 
+if (!bmp.begin(0x76)) {
+    Serial.println(F("Could not find a valid BMP280 sensor, check wiring or try a different address!"));
+    while(1) delay(10);
+  }
+
+  bmp.setSampling(Adafruit_BMP280::MODE_NORMAL,     
+                  Adafruit_BMP280::SAMPLING_X2,     
+                  Adafruit_BMP280::SAMPLING_X16,    
+                  Adafruit_BMP280::FILTER_X16,      
+                  Adafruit_BMP280::STANDBY_MS_500); 
+                  
+  sds.begin();
+
+  Serial.println(sds.queryFirmwareVersion().toString());
+  Serial.println(sds.setQueryReportingMode().toString());
    
 
     // Some start operations
@@ -197,9 +285,21 @@ void setup()
  sensorsDone = true; 
 }
 
+
+
+
+
 void loop()
 {
-gsmConnect();
+if(notConnected){
+  gsmConnect();
+  notConnected = false;
+}
+
+
+volatile String sensoren = getSensoren();
+
+
  
 if(sensorsDone){  //This Block only gets activated when all Sensor Data is ready and the Data String is ready to send, afterwards the ESP enters DeepSleep
 //mqtt start
@@ -214,12 +314,13 @@ if(sensorsDone){  //This Block only gets activated when all Sensor Data is ready
     delay(100);
    // return;
   }
-  mqtt.publish(dataTopic, "DeepSleep Start");
+  mqtt.publish(dataTopic, sensoren);
   mqtt.loop();
   delay(500);
 //mqtt finished
    
     modem.gprsDisconnect();
+    notConnected = true;
     SerialMon.println(F("GPRS disconnected"));
     //After all off
     modem.poweroff();
