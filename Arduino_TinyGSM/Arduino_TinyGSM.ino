@@ -1,16 +1,6 @@
 
+ #define SIM800L_IP5306_VERSION_20200811  //Define the modem model
 
-
-// Please select the corresponding model
-
-// #define SIM800L_IP5306_VERSION_20190610
-// #define SIM800L_AXP192_VERSION_20200327
-// #define SIM800C_AXP192_VERSION_20200609
- #define SIM800L_IP5306_VERSION_20200811
-
-// #define TEST_RING_RI_PIN            //Note will cancel the phone call test
-
-// #define ENABLE_SPI_SDCARD   //Uncomment will test external SD card
 
 // Define the serial console for debug prints, if needed
 //#define DUMP_AT_COMMANDS
@@ -41,10 +31,6 @@ TinyGsm modem(SerialAT);
 #define TIME_TO_SLEEP  30        /* Time ESP32 will go to sleep (in seconds) */
 
 
-// Server details
-const char server[] = "vsh.pp.ua";
-const char resource[] = "/TinyGSM/logo.txt";
-
 // Your GPRS credentials (leave empty, if missing)
 const char apn[]      = "internet"; // Your APN
 const char gprsUser[] = ""; // User
@@ -53,10 +39,8 @@ const char simPIN[]   = ""; // SIM card PIN code, if any
 
 // MQTT details
 const char* broker = "test.mosquitto.org";
+const char* dataTopic      = "esp32jonas/led";
 
-const char* topicLed       = "esp32jonas/led";
-const char* topicInit      = "esp32jonas/led";
-const char* topicLedStatus = "esp32jonas/led";
 
 
 TinyGsmClient client(modem);
@@ -64,6 +48,12 @@ PubSubClient  mqtt(client);
 const int  port = 80;
 const int mqttPort = 1883;
 
+//Global control variables
+bool sensorsDone = false;
+//#define DataSaveModeOff true //Uncomment if you want to disable DataSaverMode with extra debug information
+
+//Global data string
+String data = "";
 
 #define LED_PIN 13
 int ledStatus = LOW;
@@ -71,27 +61,6 @@ int ledStatus = LOW;
 uint32_t lastReconnectAttempt = 0;
 
 
-int count = 0;
-/*
-This is just to demonstrate how to use SPI device externally.
-Here we use SD card as a demonstration. In order to maintain versatility,
-I chose three boards with free pins as SPI pins
-*/
-
-void mqttCallback(char* topic, byte* payload, unsigned int len) {
-  SerialMon.print("Message arrived [");
-  SerialMon.print(topic);
-  SerialMon.print("]: ");
-  SerialMon.write(payload, len);
-  SerialMon.println();
-
-  // Only proceed if incoming message's topic matches
-  if (String(topic) == topicLed) {
-    ledStatus = !ledStatus;
-    digitalWrite(LED_PIN, ledStatus);
-    mqtt.publish(topicLedStatus, ledStatus ? "1" : "0");
-  }
-}
 
 boolean mqttConnect() {
   SerialMon.print("Connecting to ");
@@ -108,8 +77,9 @@ boolean mqttConnect() {
     return false;
   }
   SerialMon.println(" success");
-  mqtt.publish(topicInit, "GsmClientTest started");
-  mqtt.subscribe(topicLed);
+  
+  mqtt.publish(dataTopic, "GsmClientTest started"); //maybe only transmit sensor data once at init 
+
   return mqtt.connected();
 }
 
@@ -152,43 +122,8 @@ void turnOnNetlight()
     modem.sendAT("+CNETLIGHT=1");
 }
 
-
-
-void setup()
-{
-    // Set console baud rate
-    SerialMon.begin(115200);
-
-    delay(10);
-  pinMode(LED_PIN, OUTPUT);
-    // Start power management
-    if (setupPMU() == false) {
-        Serial.println("Setting power error");
-    }
-
-   
-
-    // Some start operations
-    setupModem();
-
-    // Set GSM module baud rate and UART pins
-    SerialAT.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
-     // MQTT Broker setup
-  mqtt.setServer(broker, 1883);
-  mqtt.setCallback(mqttCallback);
-
-
-
-
-
-  
-}
-
-void loop()
-{
- count++; 
-
- // Restart takes quite some time
+bool gsmConnect(){
+  // Restart takes quite some time
     // To skip it, call init() instead of restart()
     SerialMon.println("Initializing modem...");
     modem.restart();
@@ -213,7 +148,7 @@ void loop()
     if (!modem.waitForNetwork(240000L)) {
         SerialMon.println(" fail");
         delay(10000);
-        return;
+        return false;
     }
     SerialMon.println(" OK");
 
@@ -229,12 +164,45 @@ void loop()
     if (!modem.gprsConnect(apn, gprsUser, gprsPass)) {
         SerialMon.println(" fail");
         delay(10000);
-        return;
+        return false;
     }
     SerialMon.println(" OK");
+return true;
+}
 
+
+
+void setup()
+{
+    // Set console baud rate
+    SerialMon.begin(115200);
+
+    delay(10);
+  pinMode(LED_PIN, OUTPUT);
+    // Start power management
+    if (setupPMU() == false) {
+        Serial.println("Setting power error");
+    }
+
+   
+
+    // Some start operations
+    setupModem();
+
+    // Set GSM module baud rate and UART pins
+    SerialAT.begin(115200, SERIAL_8N1, MODEM_RX, MODEM_TX);
+     // MQTT Broker setup
+  mqtt.setServer(broker, 1883);
+
+ sensorsDone = true; 
+}
+
+void loop()
+{
+gsmConnect();
  
-//mqtt senden start
+if(sensorsDone){  //This Block only gets activated when all Sensor Data is ready and the Data String is ready to send, afterwards the ESP enters DeepSleep
+//mqtt start
  if (!mqtt.connected()) {
     SerialMon.println("=== MQTT NOT CONNECTED ===");
     // Reconnect every 10 seconds
@@ -244,75 +212,21 @@ void loop()
       if (mqttConnect()) { lastReconnectAttempt = 0; }
     }
     delay(100);
-    return;
+   // return;
   }
- //String test = " zahl: "+count;
-mqtt.publish(topicInit, "test");
+  mqtt.publish(dataTopic, "DeepSleep Start");
   mqtt.loop();
   delay(500);
-//mqtt ende
+//mqtt finished
    
-
     modem.gprsDisconnect();
     SerialMon.println(F("GPRS disconnected"));
-
-
-    // DTR is used to wake up the sleeping Modem
-    // DTR is used to wake up the sleeping Modem
-    // DTR is used to wake up the sleeping Modem
-#ifdef MODEM_DTR
-    bool res;
-
-    modem.sleepEnable();
-
-    delay(100);
-
-    // test modem response , res == 0 , modem is sleep
-    res = modem.testAT();
-    Serial.print("SIM800 Test AT result -> ");
-    Serial.println(res);
-
-    delay(1000);
-
-    Serial.println("Use DTR Pin Wakeup");
-    pinMode(MODEM_DTR, OUTPUT);
-    //Set DTR Pin low , wakeup modem .
-    digitalWrite(MODEM_DTR, LOW);
-
-
-    // test modem response , res == 1 , modem is wakeup
-    res = modem.testAT();
-    Serial.print("SIM800 Test AT result -> ");
-    Serial.println(res);
-
-#endif
-
-
-
-
-    // Make the LED blink three times before going to sleep
-    int i = 3;
-    while (i--) {
-        digitalWrite(LED_GPIO, LED_ON);
-        modem.sendAT("+SPWM=0,1000,80");
-        delay(500);
-        digitalWrite(LED_GPIO, LED_OFF);
-        modem.sendAT("+SPWM=0,1000,0");
-        delay(500);
-    }
-
     //After all off
     modem.poweroff();
-
     SerialMon.println(F("Poweroff"));
 
-    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-
-    esp_deep_sleep_start();
-
-    /*
-    The sleep current using AXP192 power management is about 500uA,
-    and the IP5306 consumes about 1mA
-    */
+    esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR); 
+    esp_deep_sleep_start();   
+}
     
 }
